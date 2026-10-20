@@ -56,6 +56,30 @@ func preview(_ results: [ScanResult]) {
     default: throw SafetyError.denied("Comando desconhecido. Use ajuda.")
     }
 }
+struct Row: Identifiable {
+    let id: String
+    let title: String
+    let ids: [String]
+    let bytes: Int64
+    let count: Int
+    let blocked: String?
+}
+let ownerNames = ["com.google.Chrome": "Chrome", "com.microsoft.edgemac": "Edge", "com.brave.Browser": "Brave", "org.mozilla.firefox": "Firefox", "company.thebrowser.Browser": "Arc", "com.spotify.client": "Spotify", "com.adobe.LightroomClassicCC7": "Lightroom", "com.adobe.Photoshop": "Photoshop", "com.openai.codex": "Codex", "com.apple.dt.Xcode": "Xcode"]
+func friendlyName(_ path: String) -> String {
+    let names = ["Library/Caches/Google/Chrome": "Cache do Chrome", "Library/Caches/Microsoft Edge": "Cache do Edge", "Library/Caches/BraveSoftware": "Cache do Brave", "Library/Caches/Firefox": "Cache do Firefox", "Library/Caches/Arc": "Cache do Arc", "Library/Caches/com.spotify.client": "Cache do Spotify", "Library/Caches/Adobe Camera Raw 2": "Cache do Camera Raw", "Library/Caches/claude-cli-nodejs": "Cache do Claude Code", "Library/Caches/Codex": "Cache do Codex", "Library/Caches/pip": "Cache do pip", "Library/Caches/pnpm": "Cache do pnpm", "Library/Caches/Yarn": "Cache do Yarn", "Library/Caches/Homebrew": "Cache do Homebrew", "Library/Caches/go-build": "Cache do Go", "Library/Caches/CocoaPods": "Cache do CocoaPods", ".npm/_cacache": "Cache do npm", ".cache/uv": "Cache do uv", "Library/Developer/Xcode/DerivedData": "Xcode DerivedData", "Library/Logs": "Logs com mais de 7 dias", "Downloads": "Downloads", ".codex/sessions": "Conversas do Codex", ".claude/projects": "Projetos do Claude Code", ".cache/huggingface/hub": "Modelos Hugging Face", ".ollama": "Ollama", ".lmstudio": "LM Studio", "Library/Containers/com.docker.docker": "Docker", "Library/Application Support/MobileSync/Backup": "Backups de iPhone", "Library/Developer/CoreSimulator": "Simuladores iOS", "Movies": "Filmes", "Library/Application Support/Claude/vm_bundles": "Máquina virtual do Claude"]
+    if let name = names[path] { return name }
+    if path.hasSuffix(".ShipIt") { return "Atualização baixada · " + (path.split(separator: "/").last.map(String.init) ?? path) }
+    return path
+}
+func rows(_ results: [ScanResult]) -> [Row] {
+    let crash = results.filter { $0.target.name.contains("/Crashpad/") }
+    var list = results.filter { !$0.target.name.contains("/Crashpad/") }.map { r in
+        Row(id: r.id, title: friendlyName(r.target.name), ids: [r.id], bytes: r.bytes, count: r.items.count, blocked: r.blocked.map { b in ownerNames.reduce(b) { $0.replacingOccurrences(of: $1.key, with: $1.value) } })
+    }
+    let usable = crash.filter { $0.blocked == nil }
+    list.append(Row(id: "crash", title: "Relatórios de crash", ids: usable.map(\.id), bytes: usable.reduce(0) { $0 + $1.bytes }, count: usable.reduce(0) { $0 + $1.items.count }, blocked: nil))
+    return list.filter { $0.blocked != nil || $0.count > 0 }.sorted { $0.bytes > $1.bytes }
+}
 @MainActor final class Model: ObservableObject {
     @Published var results: [ScanResult] = []
     @Published var selected: Set<String> = []
@@ -65,27 +89,44 @@ func preview(_ results: [ScanResult]) {
     @Published var meta = "30"
     @Published var watching = false
     @Published var message = ""
+    @Published var loading = false
+    @Published var showInfo = false
+    @Published var showSettings = false
+    var selectedBytes: Int64 { results.filter { selected.contains($0.id) && $0.blocked == nil }.reduce(0) { $0 + $1.bytes } }
     func refresh() {
         do {
             let config = try Config.load(home: home), disk = try DiskInfo(home: home)
-            meta = String(config.metaGB); watching = config.vigilancia; free = disk.free; total = disk.total
-            results = scanAll(); selected = Set(results.filter { $0.blocked == nil }.map(\.id))
-            info = Targets.informational.map { ($0, Scanner(home: home).informativeSize(home.appendingPathComponent($0))) }
+            meta = String(Int(config.metaGB)); watching = config.vigilancia; free = disk.free; total = disk.total
         } catch { message = error.localizedDescription }
+        guard !loading else { return }
+        loading = true
+        let apps = running()
+        Task.detached {
+            let scanned = Targets.all(home: home).map { Scanner(home: home).scan($0, running: apps) }
+            let sizes = Targets.informational.map { ($0, Scanner(home: home).informativeSize(home.appendingPathComponent($0))) }
+            await MainActor.run {
+                self.results = scanned
+                self.selected = Set(scanned.filter { $0.blocked == nil && !$0.items.isEmpty }.map(\.id))
+                self.info = sizes.filter { $0.1 > 0 }.sorted { $0.1 > $1.1 }
+                self.loading = false
+            }
+        }
     }
     func clean() {
         // Fresh plan is the exact snapshot confirmed by the user.
-        let plan = scanAll().filter { selected.contains($0.id) && $0.blocked == nil }
+        let plan = scanAll().filter { selected.contains($0.id) && $0.blocked == nil && !$0.items.isEmpty }
+        guard !plan.isEmpty else { message = "Nada selecionado para limpar."; return }
         let alert = NSAlert(); alert.messageText = "Enviar para a Lixeira?"
-        alert.informativeText = plan.map { "\($0.target.name): \(DiskInfo.format($0.bytes)), \($0.items.count) itens" }.joined(separator: "\n") + "\nTotal: " + DiskInfo.format(plan.reduce(0) { $0 + $1.bytes })
-        let text = NSTextView(frame: NSRect(x: 0, y: 0, width: 480, height: 180)); text.isEditable = false
+        alert.informativeText = rows(plan).map { "\($0.title): \(DiskInfo.format($0.bytes))" }.joined(separator: "\n") + "\n\nTotal: " + DiskInfo.format(plan.reduce(0) { $0 + $1.bytes }) + "\nDá pra desfazer depois."
+        let text = NSTextView(frame: NSRect(x: 0, y: 0, width: 420, height: 160)); text.isEditable = false
         text.string = plan.flatMap(\.items).map { "\($0.url.path) — \(DiskInfo.format($0.bytes))" }.joined(separator: "\n")
         let scroll = NSScrollView(frame: text.frame); scroll.documentView = text; scroll.hasVerticalScroller = true; alert.accessoryView = scroll
         alert.addButton(withTitle: "Enviar para a Lixeira"); alert.addButton(withTitle: "Cancelar")
+        NSApp.activate(ignoringOtherApps: true)
         guard alert.runModal() == .alertFirstButtonReturn else { return }
-        do { _ = try Cleaner(home: home).execute(plan, running: running); refresh(); message = "Limpeza concluída. Manifesto salvo." } catch { message = error.localizedDescription }
+        do { _ = try Cleaner(home: home).execute(plan, running: running); message = "Pronto! Itens enviados para a Lixeira."; refresh() } catch { message = error.localizedDescription }
     }
-    func undo() { do { let count = try Undo(home: home).latest(running: running); refresh(); message = "\(count) itens restaurados." } catch { message = error.localizedDescription } }
+    func undo() { do { let count = try Undo(home: home).latest(running: running); message = "\(count) itens restaurados."; refresh() } catch { message = error.localizedDescription } }
     func save() {
         do {
             guard let number = Double(meta), number > 0, number < 1_000_000 else { throw SafetyError.denied("Meta inválida") }
@@ -98,35 +139,64 @@ func preview(_ results: [ScanResult]) {
 }
 struct ContentView: View {
     @ObservedObject var model: Model
+    var metaBytes: Double { (Double(model.meta) ?? 30) * 1e9 }
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 12) {
-                Text("Disco Seguro").font(.title2.bold())
-                Text("Livre: \(DiskInfo.format(model.free)) de \(DiskInfo.format(model.total))")
-                ProgressView(value: min(Double(model.free) / max((Double(model.meta) ?? 30) * 1e9, 1), 1))
-                Text("Espaço livre em relação à meta") .font(.caption)
-                Button("Atualizar análise") { model.refresh() }
-                ForEach(model.results) { row in
-                    Toggle(isOn: Binding(get: { model.selected.contains(row.id) }, set: { if $0 { model.selected.insert(row.id) } else { model.selected.remove(row.id) } })) {
-                        VStack(alignment: .leading) {
-                            Text(row.target.name).font(.caption)
-                            Text(row.blocked ?? "\(DiskInfo.format(row.bytes)) · \(row.items.count) itens").font(.caption2)
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text("Disco Seguro").font(.headline)
+                Spacer()
+                if model.loading { ProgressView().controlSize(.small) }
+                Button { model.refresh() } label: { Image(systemName: "arrow.clockwise") }.buttonStyle(.borderless).help("Analisar de novo")
+            }
+            VStack(alignment: .leading, spacing: 4) {
+                Text("\(DiskInfo.format(model.free)) livres de \(DiskInfo.format(model.total))").font(.subheadline.bold())
+                ProgressView(value: model.total > 0 ? Double(model.total - model.free) / Double(model.total) : 0).tint(Double(model.free) < metaBytes ? .orange : .accentColor)
+                Text(Double(model.free) < metaBytes ? "Abaixo da meta de \(model.meta) GB" : "Dentro da meta de \(model.meta) GB").font(.caption).foregroundStyle(.secondary)
+            }
+            Divider()
+            Text("Lixo seguro (vai para a Lixeira)").font(.caption.bold()).foregroundStyle(.secondary)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 6) {
+                    ForEach(rows(model.results)) { row in
+                        let on = !row.ids.isEmpty && row.ids.allSatisfy { model.selected.contains($0) }
+                        Toggle(isOn: Binding(get: { on }, set: { v in for id in row.ids { if v { model.selected.insert(id) } else { model.selected.remove(id) } } })) {
+                            HStack {
+                                Text(row.title).lineLimit(1).truncationMode(.middle)
+                                Spacer()
+                                Text(row.blocked ?? DiskInfo.format(row.bytes)).font(.caption).foregroundStyle(row.blocked == nil ? Color.secondary : Color.orange)
+                            }
+                        }.disabled(row.blocked != nil || row.ids.isEmpty)
+                    }
+                    if !model.loading && rows(model.results).isEmpty { Text("Nada para limpar agora.").font(.caption).foregroundStyle(.secondary) }
+                    DisclosureGroup("Só informativo (nunca limpo)", isExpanded: $model.showInfo) {
+                        ForEach(model.info, id: \.0) { path, bytes in
+                            HStack {
+                                Text(friendlyName(path)).font(.caption)
+                                Spacer()
+                                Text(DiskInfo.format(bytes)).font(.caption).foregroundStyle(.secondary)
+                                Button { NSWorkspace.shared.activateFileViewerSelecting([home.appendingPathComponent(path)]) } label: { Image(systemName: "folder") }.buttonStyle(.borderless).help("Mostrar no Finder")
+                            }
                         }
-                    }.disabled(row.blocked != nil)
-                }
-                Button("Limpar selecionados") { model.clean() }.disabled(model.selected.isEmpty)
-                Button("Desfazer última limpeza") { model.undo() }
-                Divider(); Text("Somente informativo — nunca limpo").bold()
-                ForEach(model.info, id: \.0) { path, bytes in
-                    HStack { Text("\(path) · \(DiskInfo.format(bytes))").font(.caption); Spacer(); Button("Mostrar no Finder") { NSWorkspace.shared.activateFileViewerSelecting([home.appendingPathComponent(path)]) } }
-                }
-                Divider(); TextField("Meta em GB", text: $model.meta)
-                Toggle("Vigilância (a cada 3 horas, só notifica)", isOn: $model.watching)
-                Button("Salvar ajustes") { model.save() }
-                Text(model.message).font(.caption).textSelection(.enabled)
-                Button("Sair") { NSApp.terminate(nil) }
-            }.padding()
-        }.frame(width: 560, height: 680)
+                    }.font(.caption.bold()).padding(.top, 6)
+                    DisclosureGroup("Ajustes", isExpanded: $model.showSettings) {
+                        VStack(alignment: .leading, spacing: 6) {
+                            HStack { Text("Meta (GB livres)").font(.caption); TextField("30", text: $model.meta).frame(width: 60) }
+                            Toggle("Vigilância: avisa a cada 3 h (nunca limpa)", isOn: $model.watching).font(.caption)
+                            Button("Salvar ajustes") { model.save() }
+                        }.padding(.top, 4)
+                    }.font(.caption.bold())
+                }.padding(.trailing, 6)
+            }
+            Divider()
+            if !model.message.isEmpty { Text(model.message).font(.caption).foregroundStyle(.secondary).lineLimit(3) }
+            HStack {
+                Button("Limpar \(DiskInfo.format(model.selectedBytes))") { model.clean() }.buttonStyle(.borderedProminent).disabled(model.selectedBytes == 0 || model.loading)
+                Button("Desfazer última") { model.undo() }
+                Spacer()
+                Button("Sair") { NSApp.terminate(nil) }.buttonStyle(.borderless)
+            }
+        }
+        .padding(14)
     }
 }
 @MainActor final class AppDelegate: NSObject, NSApplicationDelegate {
@@ -137,12 +207,20 @@ struct ContentView: View {
         item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         item.button?.image = NSImage(systemSymbolName: "externaldrive", accessibilityDescription: "Disco Seguro")
         item.button?.target = self; item.button?.action = #selector(toggle)
-        popover.behavior = .transient; popover.contentViewController = NSHostingController(rootView: ContentView(model: model))
+        let host = NSHostingController(rootView: ContentView(model: model))
+        host.sizingOptions = []
+        popover.behavior = .transient; popover.contentViewController = host
         model.refresh()
     }
     @objc func toggle() {
-        if popover.isShown { popover.performClose(nil) }
-        else if let button = item.button { popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY) }
+        if popover.isShown { popover.performClose(nil); return }
+        guard let button = item.button else { return }
+        // Fit the popover inside the visible screen area below the menu bar.
+        let visible = (button.window?.screen ?? NSScreen.main)?.visibleFrame.height ?? 800
+        popover.contentSize = NSSize(width: 400, height: min(560, visible - 40))
+        model.refresh()
+        popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+        NSApp.activate(ignoringOtherApps: true)
     }
 }
 if CommandLine.arguments.count > 1 {
