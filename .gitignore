@@ -1,0 +1,5 @@
+.build/
+build/
+.ecossistema/
+*.app
+.DS_Store
