@@ -52,3 +52,29 @@ swift test --disable-sandbox --build-system native \
   --cache-path "$PWD/.build/cache" --config-path "$PWD/.build/config" \
   --security-path "$PWD/.build/security" --manifest-cache local
 ```
+
+## Saúde do Mac
+
+A aba **Saúde** exibe CPU por núcleo, memória e pressão, GPU, E/S de disco,
+rede, bateria, estado térmico e os processos mais pesados. **Abrir Monitor completo**
+mostra gráficos dos últimos dois minutos e uma tabela com busca e ordenação
+(até 50 processos). `DiscoSeguro saude` mede durante dois segundos e imprime um resumo.
+GPU e bateria aparecem como “indisponível” quando não há informação pública.
+O estado térmico é uma classificação do macOS, não uma temperatura em graus.
+CPU de processos é por núcleo e pode ultrapassar 100%; CPU total é normalizada.
+
+A coleta completa ocorre a cada 2 s enquanto o painel ou o monitor estão visíveis.
+Em segundo plano, a cada 10 s, são lidos apenas CPU total, pressão de memória e
+espaço livre; o estado térmico fornecido pelo macOS também informa a cor do ícone.
+Não há coleta de processos em segundo plano. Histórico fica apenas em memória.
+O ícone fica laranja por CPU acima de 85% durante 30 s, pressão elevada ou espaço
+abaixo da meta; vermelho por pressão/estado térmico críticos ou menos de 5 GB livres.
+O tooltip informa os motivos. Contadores de rede incluem interfaces ativas e VPNs,
+sem abrir conexões; E/S soma discos, enquanto espaço livre se refere ao volume pessoal.
+
+Saúde usa somente APIs públicas de leitura, sem rede, privilégios, ferramentas
+externas ou subprocessos. Encerrar exige confirmação e aceita apenas apps comuns
+do mesmo usuário, excluindo todo `com.apple.*` e o próprio Disco Seguro. Se o app
+continuar aberto após 5 s, uma nova confirmação permite forçar via
+`NSRunningApplication`; usuário e identidade do processo são revalidados.
+As garantias da limpeza e da Lixeira permanecem iguais.

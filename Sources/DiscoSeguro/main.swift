@@ -29,6 +29,11 @@ func preview(_ results: [ScanResult]) {
 }
 @MainActor func cli(_ args: [String]) throws {
     switch args.first {
+    case "saude":
+        var collector = HealthCollector()
+        _ = collector.sample(full: true, home: home)
+        Thread.sleep(forTimeInterval: 2)
+        print(HealthFormat.summary(collector.sample(full: true, home: home)))
     case "status":
         let disk = try DiskInfo(home: home), config = try Config.load(home: home)
         print("Livre: \(DiskInfo.format(disk.free)) / \(DiskInfo.format(disk.total)); meta: \(config.metaGB) GB; vigilância: \(config.vigilancia ? "ligada" : "desligada")")
@@ -52,7 +57,7 @@ func preview(_ results: [ScanResult]) {
         guard args.count == 2, let value = Double(args[1]), value.isFinite, value > 0, value < 1_000_000 else { throw SafetyError.denied("Informe uma meta válida em GB") }
         var config = try Config.load(home: home); config.metaGB = value; try config.save(home: home)
         print("Meta salva: \(value) GB")
-    case "ajuda": print("Disco Seguro: status | analisar | limpar [--executar] [--sim] | desfazer | vigiar | vigilancia ligar|desligar | meta <GB> | ajuda\nLimpar sem --executar apenas simula. --sim dispensa a pergunta, mas não a prévia.")
+    case "ajuda": print("Disco Seguro: status | saude | analisar | limpar [--executar] [--sim] | desfazer | vigiar | vigilancia ligar|desligar | meta <GB> | ajuda\nLimpar sem --executar apenas simula. --sim dispensa a pergunta, mas não a prévia.")
     default: throw SafetyError.denied("Comando desconhecido. Use ajuda.")
     }
 }
@@ -199,19 +204,28 @@ struct ContentView: View {
         .padding(14)
     }
 }
-@MainActor final class AppDelegate: NSObject, NSApplicationDelegate {
+@MainActor final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     var item: NSStatusItem!
     let popover = NSPopover()
     let model = Model()
+    let health = HealthModel()
+    lazy var monitorWindow = HealthWindowController(model: health)
     func applicationDidFinishLaunching(_ notification: Notification) {
         item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         item.button?.image = NSImage(systemSymbolName: "externaldrive", accessibilityDescription: "Disco Seguro")
         item.button?.target = self; item.button?.action = #selector(toggle)
-        let host = NSHostingController(rootView: ContentView(model: model))
+        let host = NSHostingController(rootView: PopoverView(model: model, health: health, openMonitor: { [weak self] in self?.monitorWindow.show() }))
         host.sizingOptions = []
-        popover.behavior = .transient; popover.contentViewController = host
+        popover.behavior = .transient; popover.contentViewController = host; popover.delegate = self
+        health.onAlert = { [weak self] alert in
+            self?.item.button?.contentTintColor = alert.level == .red ? .systemRed : alert.level == .orange ? .systemOrange : nil
+            self?.item.button?.toolTip = alert.reasons.isEmpty ? "Disco Seguro — Saúde normal" : alert.reasons.joined(separator: " · ")
+        }
+        health.start()
         model.refresh()
     }
+    func popoverDidShow(_ notification: Notification) { health.panelVisible = true }
+    func popoverDidClose(_ notification: Notification) { health.panelVisible = false }
     @objc func toggle() {
         if popover.isShown { popover.performClose(nil); return }
         guard let button = item.button else { return }
