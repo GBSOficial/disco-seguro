@@ -148,7 +148,7 @@ struct PopoverView: View {
 @MainActor enum ProcessActions {
     static func allowed(_ row: ProcessReading, app: NSRunningApplication) -> Bool {
         guard !app.isTerminated, let identity = ProcessSampler.identity(row.pid), identity.started == row.started else { return false }
-        return HealthMath.canTerminate(bundleID: app.bundleIdentifier, ownBundleID: Bundle.main.bundleIdentifier ?? "com.biel.disco-seguro", pid: row.pid, ownPID: ProcessInfo.processInfo.processIdentifier, regular: app.activationPolicy == .regular, sameUser: identity.uid == getuid())
+        return HealthMath.canTerminate(bundleID: app.bundleIdentifier, ownBundleID: Bundle.main.bundleIdentifier ?? "com.gbsoficial.disco-seguro", pid: row.pid, ownPID: ProcessInfo.processInfo.processIdentifier, regular: app.activationPolicy == .regular, sameUser: identity.uid == getuid())
     }
     static func canTerminate(_ row: ProcessReading) -> Bool {
         guard let app = NSRunningApplication(processIdentifier: row.pid) else { return false }

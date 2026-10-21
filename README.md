@@ -78,3 +78,7 @@ do mesmo usuário, excluindo todo `com.apple.*` e o próprio Disco Seguro. Se o 
 continuar aberto após 5 s, uma nova confirmação permite forçar via
 `NSRunningApplication`; usuário e identidade do processo são revalidados.
 As garantias da limpeza e da Lixeira permanecem iguais.
+
+## Licença
+
+MIT — veja [LICENSE](LICENSE).

@@ -35,12 +35,12 @@ import Testing
 }
 @Test func terminationPolicy() {
     func allowed(_ bundle: String? = "org.example.editor", _ regular: Bool = true, _ sameUser: Bool = true, _ pid: Int32 = 42) -> Bool {
-        HealthMath.canTerminate(bundleID: bundle, ownBundleID: "com.biel.disco-seguro", pid: pid, ownPID: 7, regular: regular, sameUser: sameUser)
+        HealthMath.canTerminate(bundleID: bundle, ownBundleID: "com.gbsoficial.disco-seguro", pid: pid, ownPID: 7, regular: regular, sameUser: sameUser)
     }
     #expect(allowed())
     #expect(!allowed("com.apple.Safari"))
     #expect(!allowed("com.apple.Music"))
-    #expect(!allowed("com.biel.disco-seguro"))
+    #expect(!allowed("com.gbsoficial.disco-seguro"))
     #expect(!allowed(nil))
     #expect(!allowed("org.example.editor", false))
     #expect(!allowed("org.example.editor", true, false))

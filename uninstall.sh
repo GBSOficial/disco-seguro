@@ -13,7 +13,7 @@ struct SystemTrasher: Trasher {
 }
 let trasher: any Trasher = SystemTrasher()
 let home = URL(fileURLWithPath: CommandLine.arguments[1])
-for path in ["Library/LaunchAgents/com.biel.disco-seguro.vigia.plist", "Applications/Disco Seguro.app", ".local/bin/disco-seguro", "Library/Application Support/DiscoSeguro"] {
+for path in ["Library/LaunchAgents/com.gbsoficial.disco-seguro.vigia.plist", "Applications/Disco Seguro.app", ".local/bin/disco-seguro", "Library/Application Support/DiscoSeguro"] {
     let url = home.appendingPathComponent(path)
     if FileManager.default.fileExists(atPath: url.path) || (try? FileManager.default.destinationOfSymbolicLink(atPath: url.path)) != nil {
         try trasher.trash(url)

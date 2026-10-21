@@ -16,7 +16,7 @@ func preview(_ results: [ScanResult]) {
 @MainActor func notifyIfNeeded() throws {
     let config = try Config.load(home: home)
     guard config.vigilancia, try DiskInfo(home: home).free < Int64(config.metaGB * 1_000_000_000) else { return }
-    guard Bundle.main.bundleIdentifier == "com.biel.disco-seguro" else { throw SafetyError.denied("Notificações exigem o binário instalado no bundle do app.") }
+    guard Bundle.main.bundleIdentifier == "com.gbsoficial.disco-seguro" else { throw SafetyError.denied("Notificações exigem o binário instalado no bundle do app.") }
     let center = UNUserNotificationCenter.current()
     center.getNotificationSettings { settings in
         guard settings.authorizationStatus == .authorized else { return }
