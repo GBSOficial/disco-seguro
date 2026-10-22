@@ -8,7 +8,7 @@ Downloads, sessões e modelos de IA são apenas informativos.
 
 ```text
 ./build.sh                  # compila, empacota e assina ad-hoc
-./install.sh                # instalação manual opcional em ~/Applications
+./install.sh                # instala em /Applications (ou ~/Applications) e pergunta se abre ao ligar o Mac
 DiscoSeguro status
 DiscoSeguro analisar
 DiscoSeguro limpar          # só simula

@@ -1,10 +1,13 @@
 #!/bin/bash
 set -euo pipefail
 # A desinstalação também preserva os arquivos na Lixeira.
-APP="$HOME/Applications/Disco Seguro.app"
-if [[ -x "$APP/Contents/MacOS/DiscoSeguro" ]]; then
-  "$APP/Contents/MacOS/DiscoSeguro" vigilancia desligar
-fi
+for APP in "/Applications/Disco Seguro.app" "$HOME/Applications/Disco Seguro.app"; do
+  if [[ -x "$APP/Contents/MacOS/DiscoSeguro" ]]; then
+    "$APP/Contents/MacOS/DiscoSeguro" vigilancia desligar
+  fi
+done
+pkill -x DiscoSeguro 2>/dev/null || true
+osascript -e 'tell application "System Events" to delete (every login item whose name is "Disco Seguro")' >/dev/null 2>&1 || true
 /usr/bin/swift - "$HOME" <<'SWIFT'
 import Foundation
 protocol Trasher { func trash(_ url: URL) throws }
@@ -19,4 +22,6 @@ for path in ["Library/LaunchAgents/com.gbsoficial.disco-seguro.vigia.plist", "Ap
         try trasher.trash(url)
     }
 }
+let system = URL(fileURLWithPath: "/Applications/Disco Seguro.app")
+if FileManager.default.fileExists(atPath: system.path) { try trasher.trash(system) }
 SWIFT
